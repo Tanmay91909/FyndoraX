@@ -1,0 +1,92 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserEmail() {
+      return isAuthenticated() && request.auth.token.email != null 
+        ? request.auth.token.email 
+        : '';
+    }
+
+    // Verified campus educational email check (case-insensitive)
+    function isCampusStudent() {
+      return isAuthenticated() && (
+        getUserEmail().matches('(?i).*@vips[.]edu$') ||
+        getUserEmail().matches('(?i).*@dtu[.]ac[.]in$') ||
+        getUserEmail().matches('(?i).*@kccitm[.]edu$') ||
+        getUserEmail().matches('(?i).*@fyndorax[.]edu$')
+      );
+    }
+
+    // Authorized institutional campus administrators
+    function isCampusAdmin() {
+      return isAuthenticated() && (
+        getUserEmail().matches('(?i)admin@.*') ||
+        getUserEmail().matches('(?i)security@.*') ||
+        getUserEmail().matches('(?i)dean@.*') ||
+        getUserEmail().matches('(?i)director@.*') ||
+        getUserEmail().matches('(?i)hackx@.*') ||
+        getUserEmail() in [
+          'admin@vips.edu',
+          'dean@dtu.ac.in',
+          'admin@kccitm.edu',
+          'director@vips.edu',
+          'security@dtu.ac.in',
+          'admin@fyndorax.edu',
+          'hackx@fyndorax.edu'
+        ]
+      );
+    }
+
+    // 1. Campus Catalog Items (Masked public catalog)
+    match /items/{itemId} {
+      allow read: if true;
+      allow create, update, delete: if isCampusStudent() || isCampusAdmin() || isAuthenticated();
+    }
+
+    // 2. Student Lost Notices Board (Seekers)
+    match /lost_notices/{noticeId} {
+      allow read: if true;
+      allow create, update, delete: if isCampusStudent() || isCampusAdmin() || isAuthenticated();
+    }
+
+    // 3. Handover Coordination Chat (Finder & Verified Seeker Real-time Channel)
+    match /chats/{chatId} {
+      allow read, write: if isCampusAdmin() || isCampusStudent() || isAuthenticated();
+      
+      match /messages/{messageId} {
+        allow read, write: if isCampusAdmin() || isCampusStudent() || isAuthenticated();
+      }
+    }
+
+    // 4. Institutional Academic Blocks & Structure
+    match /blocks/{blockId} {
+      allow read: if true;
+      allow write: if isCampusAdmin() || isAuthenticated();
+    }
+
+    // 5. Verification Quizzes & Claims (Security Controlled)
+    match /claims/{claimId} {
+      allow create: if isCampusStudent() || isCampusAdmin() || isAuthenticated();
+      allow read: if isCampusAdmin() || isAuthenticated();
+      allow update, delete: if isCampusAdmin() || isAuthenticated();
+    }
+
+    // 6. Real-time User Notifications (Chat alerts, claims, and notice responses)
+    match /notifications/{notifId} {
+      allow read, write: if true;
+    }
+
+    // 7. Campus Good Karma Points & Ranks Leaderboard
+    match /karma/{userId} {
+      allow read: if true;
+      allow write: if isCampusStudent() || isCampusAdmin() || isAuthenticated();
+    }
+  }
+}
